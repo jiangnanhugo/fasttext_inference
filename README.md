@@ -15,7 +15,7 @@ fasttext  -input xxx -output xxx -slim
 generated slimed dumpfile and remove `output_` and `qoutput_`.
 
 
-
+# 2. Usage
 ``bash
 ./change.sh inference
 ``

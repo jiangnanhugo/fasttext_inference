@@ -55,6 +55,7 @@ class Args {
     bool qnorm;
     size_t cutoff;
     size_t dsub;
+	bool slim;
 
     void parseArgs(const std::vector<std::string>& args);
     void printHelp();

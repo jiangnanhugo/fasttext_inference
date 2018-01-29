@@ -7,7 +7,7 @@
 * of patent rights can be found in the PATENTS file in the same directory.
 */
 
-#include "model.h"
+#include "model_inference.h"
 
 #include <iostream>
 #include <assert.h>
@@ -15,17 +15,9 @@
 
 namespace fasttext {
 
-	Model::Model(std::shared_ptr<Matrix> wi,
-		std::shared_ptr<Matrix> wo,
-		std::shared_ptr<Args> args,
-		int32_t seed)
-		: hidden_(args->dim), output_(wo->m_),
-		grad_(args->dim), rng(seed), quant_(false)
-	{
+	Model::Model(std::shared_ptr<Matrix> wi,std::shared_ptr<Args> args,int32_t seed): hidden_(args->dim),grad_(args->dim), rng(seed), quant_(false){
 		wi_ = wi;
-		wo_ = wo;
 		args_ = args;
-		osz_ = wo->m_;
 		hsz_ = args->dim;
 		negpos = 0;
 		loss_ = 0.0;
@@ -39,88 +31,14 @@ namespace fasttext {
 		delete[] t_log;
 	}
 
-	void Model::setQuantizePointer(std::shared_ptr<QMatrix> qwi,
-		std::shared_ptr<QMatrix> qwo, bool qout) {
+	void Model::setQuantizePointer(std::shared_ptr<QMatrix> qwi) {
 		qwi_ = qwi;
-		qwo_ = qwo;
-		if (qout) {
-			osz_ = qwo_->getM();
-		}
 	}
 
-	real Model::binaryLogistic(int32_t target, bool label, real lr) {
-		real score = sigmoid(wo_->dotRow(hidden_, target));
-		real alpha = lr * (real(label) - score);
-		grad_.addRow(*wo_, target, alpha);
-		wo_->addRow(hidden_, target, alpha);
-		if (label) {
-			return -log(score);
-		}
-		else {
-			return -log(1.0 - score);
-		}
-	}
+	
 
-	real Model::negativeSampling(int32_t target, real lr) {
-		real loss = 0.0;
-		grad_.zero();
-		for (int32_t n = 0; n <= args_->neg; n++) {
-			if (n == 0) {
-				loss += binaryLogistic(target, true, lr);
-			}
-			else {
-				loss += binaryLogistic(getNegative(target), false, lr);
-			}
-		}
-		return loss;
-	}
+	
 
-	real Model::hierarchicalSoftmax(int32_t target, real lr) {
-		real loss = 0.0;
-		grad_.zero();
-		const std::vector<bool>& binaryCode = codes[target];
-		const std::vector<int32_t>& pathToRoot = paths[target];
-		for (int32_t i = 0; i < pathToRoot.size(); i++) {
-			loss += binaryLogistic(pathToRoot[i], binaryCode[i], lr);
-		}
-		return loss;
-	}
-
-	void Model::computeOutputSoftmax(Vector& hidden, Vector& output) const {
-		if (quant_ && args_->qout) {
-			output.mul(*qwo_, hidden);
-		}
-		else {
-			output.mul(*wo_, hidden);
-		}
-		real max = output[0], z = 0.0;
-		for (int32_t i = 0; i < osz_; i++) {
-			max = std::max(output[i], max);
-		}
-		for (int32_t i = 0; i < osz_; i++) {
-			output[i] = exp(output[i] - max);
-			z += output[i];
-		}
-		for (int32_t i = 0; i < osz_; i++) {
-			output[i] /= z;
-		}
-	}
-
-	void Model::computeOutputSoftmax() {
-		computeOutputSoftmax(hidden_, output_);
-	}
-
-	real Model::softmax(int32_t target, real lr) {
-		grad_.zero();
-		computeOutputSoftmax();
-		for (int32_t i = 0; i < osz_; i++) {
-			real label = (i == target) ? 1.0 : 0.0;
-			real alpha = lr * (label - output_[i]);
-			grad_.addRow(*wo_, i, alpha);
-			wo_->addRow(hidden_, i, alpha);
-		}
-		return -log(output_[target]);
-	}
 
 	void Model::computeHidden(const std::vector<int32_t>& input, Vector& hidden) const {
 		assert(hidden.size() == hsz_);
@@ -141,104 +59,7 @@ namespace fasttext {
 		return l.first > r.first;
 	}
 
-	void Model::predict(const std::vector<int32_t>& input, int32_t k,
-		std::vector<std::pair<real, int32_t>>& heap,
-		Vector& hidden, Vector& output) const {
-		assert(k > 0);
-		heap.reserve(k + 1);
-		computeHidden(input, hidden);
-		if (args_->loss == loss_name::hs) {
-			dfs(k, 2 * osz_ - 2, 0.0, heap, hidden);
-		}
-		else {
-			findKBest(k, heap, hidden, output);
-		}
-		std::sort_heap(heap.begin(), heap.end(), comparePairs);
-	}
 
-	void Model::predict(const std::vector<int32_t>& input, int32_t k,
-		std::vector<std::pair<real, int32_t>>& heap) {
-		predict(input, k, heap, hidden_, output_);
-	}
-
-	void Model::findKBest(int32_t k, std::vector<std::pair<real, int32_t>>& heap,
-		Vector& hidden, Vector& output) const {
-		computeOutputSoftmax(hidden, output);
-		for (int32_t i = 0; i < osz_; i++) {
-			if (heap.size() == k && log(output[i]) < heap.front().first) {
-				continue;
-			}
-			heap.push_back(std::make_pair(log(output[i]), i));
-			std::push_heap(heap.begin(), heap.end(), comparePairs);
-			if (heap.size() > k) {
-				std::pop_heap(heap.begin(), heap.end(), comparePairs);
-				heap.pop_back();
-			}
-		}
-	}
-
-	void Model::dfs(int32_t k, int32_t node, real score,
-		std::vector<std::pair<real, int32_t>>& heap,
-		Vector& hidden) const {
-		if (heap.size() == k && score < heap.front().first) {
-			return;
-		}
-
-		if (tree[node].left == -1 && tree[node].right == -1) {
-			heap.push_back(std::make_pair(score, node));
-			std::push_heap(heap.begin(), heap.end(), comparePairs);
-			if (heap.size() > k) {
-				std::pop_heap(heap.begin(), heap.end(), comparePairs);
-				heap.pop_back();
-			}
-			return;
-		}
-
-		real f;
-		if (quant_ && args_->qout) {
-			f = sigmoid(qwo_->dotRow(hidden, node - osz_));
-		}
-		else {
-			f = sigmoid(wo_->dotRow(hidden, node - osz_));
-		}
-
-		dfs(k, tree[node].left, score + log(1.0 - f), heap, hidden);
-		dfs(k, tree[node].right, score + log(f), heap, hidden);
-	}
-
-	void Model::update(const std::vector<int32_t>& input, int32_t target, real lr) {
-		assert(target >= 0);
-		assert(target < osz_);
-		if (input.size() == 0) return;
-		computeHidden(input, hidden_);
-		if (args_->loss == loss_name::ns) {
-			loss_ += negativeSampling(target, lr);
-		}
-		else if (args_->loss == loss_name::hs) {
-			loss_ += hierarchicalSoftmax(target, lr);
-		}
-		else {
-			loss_ += softmax(target, lr);
-		}
-		nexamples_ += 1;
-
-		if (args_->model == model_name::sup) {
-			grad_.mul(1.0 / input.size());
-		}
-		for (auto it = input.cbegin(); it != input.cend(); ++it) {
-			wi_->addRow(grad_, *it, 1.0);
-		}
-	}
-
-	void Model::setTargetCounts(const std::vector<int64_t>& counts) {
-		assert(counts.size() == osz_);
-		if (args_->loss == loss_name::ns) {
-			initTableNegatives(counts);
-		}
-		if (args_->loss == loss_name::hs) {
-			buildTree(counts);
-		}
-	}
 
 	void Model::initTableNegatives(const std::vector<int64_t>& counts) {
 		real z = 0.0;

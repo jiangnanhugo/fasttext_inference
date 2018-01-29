@@ -42,6 +42,7 @@ Args::Args() {
   qnorm = false;
   cutoff = 0;
   dsub = 2;
+  slim = false;
 }
 
 std::string Args::lossToString(loss_name ln) {
@@ -137,13 +138,15 @@ void Args::parseArgs(const std::vector<std::string>& args) {
       qnorm = true; ai--;
     } else if (args[ai] == "-retrain") {
       retrain = true; ai--;
-    } else if (args[ai] == "-qout") {
+    }else if (args[ai] == "-slim") {
+		slim = true; ai--;
+	}else if (args[ai] == "-qout") {
       qout = true; ai--;
     } else if (args[ai] == "-cutoff") {
     cutoff = std::stoi(args[ai + 1]);
     } else if (args[ai] == "-dsub") {
       dsub = std::stoi(args[ai + 1]);
-    } else {
+    }else {
       std::cerr << "Unknown argument: " << args[ai] << std::endl;
       printHelp();
       exit(EXIT_FAILURE);

@@ -23,7 +23,7 @@
 #include "dictionary.h"
 #include "matrix.h"
 #include "qmatrix.h"
-#include "model.h"
+#include "model_inference.h"
 #include "real.h"
 #include "utils.h"
 #include "vector.h"
@@ -61,33 +61,13 @@ namespace fasttext {
 		void saveModel();
 		void loadModel(std::istream&);
 		void loadModel(const std::string&);
-		void printInfo(real, real);
 
-		void supervised(Model&, real, const std::vector<int32_t>&,
-			const std::vector<int32_t>&);
-		void cbow(Model&, real, const std::vector<int32_t>&);
-		void skipgram(Model&, real, const std::vector<int32_t>&);
-		std::vector<int32_t> selectEmbeddings(int32_t) const;
-		void quantize(std::shared_ptr<Args>);
-		void test(std::istream&, int32_t);
-		void predict(std::istream&, int32_t, bool);
-		void predict(
-			std::istream&,
-			int32_t,
-			std::vector<std::pair<real, std::string>>&) const;
+
+
 		void wordVectors();
-		void sentenceVectors();
-		void ngramVectors(std::string);
 		void textVectors();
 		void printWordVectors();
-		void printSentenceVectors();
 		void precomputeWordVectors(Matrix&);
-		void findNN(const Matrix&, const Vector&, int32_t,
-			const std::set<std::string>&);
-		void nn(int32_t);
-		void analogies(int32_t);
-		void trainThread(int32_t);
-		void train(std::shared_ptr<Args>);
 
 		void loadVectors(std::string);
 		int getDimension() const;

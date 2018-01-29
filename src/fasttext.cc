@@ -102,42 +102,49 @@ void FastText::signModel(std::ostream& out) {
 }
 
 void FastText::saveModel() {
-  std::string fn(args_->output);
-  if (quant_) {
-    fn += ".ftz";
-  } else {
-    fn += ".bin";
-  }
-  std::ofstream ofs(fn, std::ofstream::binary);
-  if (!ofs.is_open()) {
-    std::cerr << "Model file cannot be opened for saving!" << std::endl;
-    exit(EXIT_FAILURE);
-  }
-  std::cout << "signModel(ofs)" << std::endl;
-  signModel(ofs);
-  std::cout << "args_->save(ofs);" << std::endl;
-  args_->save(ofs);
-  std::cout << "dict_->save(ofs);" << std::endl;
-  dict_->save(ofs);
+	std::string fn(args_->output);
+	if (args_->slim) {
+		fn += ".slimed";
+	}
+	if (quant_) {
+		fn += ".ftz";
+	} else {
+		fn += ".bin";
+	}
+	std::ofstream ofs(fn, std::ofstream::binary);
+	if (!ofs.is_open()) {
+		std::cerr << "Model file cannot be opened for saving!" << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	signModel(ofs);
+	args_->save(ofs);
+	dict_->save(ofs);
 
-  ofs.write((char*)&(quant_), sizeof(bool));
-  if (quant_) {
-	std::cout << "quantize input_->save(ofs);" << std::endl;
-    qinput_->save(ofs);
-  } else {
-	std::cout << "input_->save(ofs);" << std::endl;
-    input_->save(ofs);
-  }
+	ofs.write((char*)&(quant_), sizeof(bool));
+	if (quant_) {
+		qinput_->save(ofs);
+	} else {
+		input_->save(ofs);
+	}
 
-  ofs.write((char*)&(args_->qout), sizeof(bool));
-  if (quant_ && args_->qout) {
-    qoutput_->save(ofs);
-  } else {
-    output_->save(ofs);
-  }
+	std::cout << "args->slim:" << args_->slim << std::endl;
+	if (args_->slim) {
+		std::cout << "no qout_" << std::endl;
+	}else {
+		std::cout << "qout_ dumped:" << args_->slim << std::endl;
+		ofs.write((char*)&(args_->qout), sizeof(bool));
+		if (quant_ && args_->qout) {
+			qoutput_->save(ofs);
+		}else {
+			output_->save(ofs);
+		}
+	}
+  
 
   ofs.close();
 }
+
+
 
 void FastText::loadModel(const std::string& filename) {
   std::ifstream ifs(filename, std::ifstream::binary);
@@ -154,6 +161,7 @@ void FastText::loadModel(const std::string& filename) {
 }
 
 void FastText::loadModel(std::istream& in) {
+  std::cout << "loadModel()" << std::endl;
   args_ = std::make_shared<Args>();
   dict_ = std::make_shared<Dictionary>(args_);
   input_ = std::make_shared<Matrix>();
@@ -232,6 +240,7 @@ std::vector<int32_t> FastText::selectEmbeddings(int32_t cutoff) const {
 }
 
 void FastText::quantize(std::shared_ptr<Args> qargs) {
+  std::cout << "FastText::quantize args->slim:" << qargs->slim << std::endl;
   if (qargs->output.empty()) {
     std::cerr<<"No model provided!"<<std::endl;
     exit(1);
@@ -241,6 +250,7 @@ void FastText::quantize(std::shared_ptr<Args> qargs) {
   args_->input = qargs->input;
   args_->qout = qargs->qout;
   args_->output = qargs->output;
+  args_->slim = qargs->slim;
 
 
   if (qargs->cutoff > 0 && qargs->cutoff < input_->m_) {
@@ -280,6 +290,41 @@ void FastText::quantize(std::shared_ptr<Args> qargs) {
 
   quant_ = true;
   saveModel();
+}
+
+void FastText::slimquantize(std::shared_ptr<Args> qargs) {
+	if (qargs->output.empty()) {
+		std::cerr << "No model provided!" << std::endl;
+		exit(1);
+	}
+	loadModel(qargs->output + ".ftz");
+
+	args_->input = qargs->input;
+	args_->qout = qargs->qout;
+	args_->output = qargs->output;
+	args_->slim = qargs->slim;
+
+
+	if (qargs->cutoff > 0 && qargs->cutoff < input_->m_) {
+		auto idx = selectEmbeddings(qargs->cutoff);
+		dict_->prune(idx);
+		std::shared_ptr<Matrix> ninput =
+			std::make_shared<Matrix>(idx.size(), args_->dim);
+		for (auto i = 0; i < idx.size(); i++) {
+			for (auto j = 0; j < args_->dim; j++) {
+				ninput->at(i, j) = input_->at(idx[i], j);
+			}
+		}
+		input_ = ninput;
+	}
+
+	qinput_ = std::make_shared<QMatrix>(*input_, qargs->dsub, qargs->qnorm);
+
+	if (args_->qout) {
+		qoutput_ = std::make_shared<QMatrix>(*output_, 2, qargs->qnorm);
+	}
+
+	quant_ = true;
 }
 
 void FastText::supervised(Model& model, real lr,

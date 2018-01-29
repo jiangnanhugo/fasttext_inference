@@ -28,7 +28,8 @@ void printUsage() {
     << "  print-word-vectors      print word vectors given a trained model\n"
     << "  print-sentence-vectors  print sentence vectors given a trained model\n"
     << "  nn                      query for nearest neighbors\n"
-    << "  analogies               query for analogies\n"
+	<< "  analogies               query for analogies\n"
+	<< "  slim                    stop dump output_\n"
     << std::endl;
 }
 
@@ -86,9 +87,23 @@ void quantize(const std::vector<std::string>& args) {
     exit(EXIT_FAILURE);
   }
   a->parseArgs(args);
+  std::cout <<"main.train.cc quantize args->slim:"<< a->slim << std::endl;
   FastText fasttext;
   fasttext.quantize(a);
   exit(0);
+}
+
+void slim_quant(const std::vector<std::string>& args) {
+	std::shared_ptr<Args> a = std::make_shared<Args>();
+	if (args.size() < 3) {
+		printQuantizeUsage();
+		a->printHelp();
+		exit(EXIT_FAILURE);
+	}
+	a->parseArgs(args);
+	FastText fasttext;
+	fasttext.slimquantize(a);
+	exit(0);
 }
 
 void printNNUsage() {
@@ -250,7 +265,9 @@ int main(int argc, char** argv) {
     test(args);
   } else if (command == "quantize") {
     quantize(args);
-  } else if (command == "print-word-vectors") {
+  } else if (command == "slimquantize") {
+	  slim_quant(args);
+  }else if (command == "print-word-vectors") {
     printWordVectors(args);
   } else if (command == "print-sentence-vectors") {
     printSentenceVectors(args);
